@@ -23,7 +23,7 @@ let tdep name program expected = name>::fun ctxt ->
   let a = anf_program p in
   let answer = match a with
     | AProgram(decls, body) ->
-      let (_, deps, _) = (dep_graph body) in
+      let (deps, _) = (dep_graph body) in
       deps in
   let c = Pervasives.compare in
   assert_equal (List.sort ~cmp:c expected) (List.sort ~cmp:c answer) ~printer:dump;;
@@ -34,7 +34,7 @@ let tcolor name program expected_colors = name>::fun ctxt ->
   let body = match a with
     | AProgram(decls, body) -> body in
   let vars = getvars body in
-  let (_, edges, _) = (dep_graph body) in
+  let (edges, _) = (dep_graph body) in
   let coloring = get_colors [] vars edges in
   let stackmax = List.fold_right (fun (_, l) m ->
     match l with

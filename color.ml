@@ -45,12 +45,10 @@ let get_colors (regs : reg list) (varlist : string list) (edges : (string * stri
 let getvars (ae : aexpr) : string list = []
 
 let dep_graph (ae : aexpr) : ((string * string) list * (cexpr * string list) list) =
-  let _, edges, amap = dep_graph_ae ae [] in
-  ((remove_duplicates edges), amap)
+  ([], [])
 
 let colorful_env (ae : aexpr) : (location envt * (cexpr * string list) list) =
   let (deps, amap) = dep_graph ae in
   (* spare_regs is a list that contains the usable registers for your implementation *)
-  (* 
   (get_colors !spare_regs (getvars ae) deps, amap)
 
