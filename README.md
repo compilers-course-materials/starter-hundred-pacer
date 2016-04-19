@@ -157,10 +157,12 @@ There are a few options for handling (3):
 - We could blend the first two options, which gives us the notion of
   caller-save vs. callee-save registers
 
-The first option is the simplest, but runs into issues when calling _external_
-functions like `print`, where we do not control the use of registers.  So we
-pick the second option, which is slightly more complicated – the caller needs
-to store registers correctly, and needs enough information to do so.
+The first option is the simplest so it's what the compiler does. It requires
+one wrinkle – when calling an _external_ function like `print`, we need to
+save all the registers the current function is using.  The current
+implementation simply stores all the registers in `env` by pushing and popping
+their values before and after the call.  It's interesting (though not part of
+the assignment) to think about how we could do better than that.
 
 These changes have been mostly made for you, but you will need to understand
 them so your register allocator (below) can interface correctly with the
@@ -283,14 +285,73 @@ vertex such that no two adjacent vertices share a color.  We will use a library
 
 The first part is an interesting problem for us as compiler designers.  Given
 an input expression, can we create a graph that represents all of the
-dependencies between variables, as described above?  This is the fragment of
-the compiler you will implement in this assignment.
+dependencies between variables, as described above?  If we can, we can use
+existing coloring algorithms (and fast heuristics for them, if we don't want to
+wait for an optimal solution).  This graph creation is the fragment of the
+compiler you will implement in this assignment.
 
+In particular you'll implement two functions (which may each come with their own helpers):
+
+```
+(* Given an expression, return a list of dependency edges between
+variables *)
+dep_graph :: (ae : aexpr) -> (string * string) list
+
+(* Given a list of registers, a set of variables, and a set of edges,
+create an environment of locations that uses as many registers as
+possible *)
+get_colors :: (regs : reg list) (varlist : string list) (edges : (string * string) list) : location envt =
+
+(* combine dep_graph and get_colors to create an environment for the given expression *)
+colorful_env :: (ae : aexpr) -> location envt
+```
+
+In class, this helper signature was suggested for doing the work of
+`dep_graph`:
+
+```
+(*
+
+actives is a list of active variables from outside the expression
+(for example in a nested if).
+
+The return includes both the active variables from this expression,
+and the list of edges that this expression creates
+
+*)
+dep_graph_ae :: (ae : aexpr) (actives : string list) -> (string list * (string * string) list)
+dep_graph_ce :: (ce : cexpr) (actives : string list) -> (string list * (string * string) list)
+```
 
 
 ### Testing
 
 There are two new useful mechanisms for testing.
 
-- `tdep` takes a program (as a string) and a list of edges and checks that calling
+- `tdep` takes a program (as a string) and a list of edges and checks that
+  calling `dep_graph` on the main body produces the given edges.
+
+- `tcolor` takes a program (as a string) and a number, and checks that calling
+  `get\_colors` coloring the dependency graph with (exactly) the given number
+  of colors.  This is a useful way to check that you are calling the coloring
+  function correctly after generating dependencies.
+
+You can also use `t` as usual, to test that programs run as expected; it will
+run with 8 available registers (`R1-R8`).
+
+You can also compile programs with differing numbers of registers available by
+setting the `NUMREGS` variable.  So, for example, you can create an input file
+called `input/longloop.diamond`, populate it with the long loop at the
+beginning of the writeup above, and run:
+
+```
+$ make output/longloop.run NUMREGS=3
+```
+
+And this will trigger the build for `longloop` with just 3 registers.  This can
+be fun for testing the performance of long-running programs with different
+numbers of registers available.  Setting `NUMREGS` to `0` essentially emulates
+the performance of our past compilers, since it necessarily allocates all
+variables on the stack.
+
 
