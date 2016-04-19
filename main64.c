@@ -9,7 +9,7 @@ extern int64_t print(int64_t val) asm("print");
 
 int64_t print(int64_t val) {
   if(val & 1 ^ 1) {
-    printf("%ld\n", val >> 1);
+    printf("%lld\n", val >> 1);
   }
   else if(val == 0x1f) {
     printf("true\n");
@@ -37,7 +37,7 @@ void error(int64_t i) {
     fprintf(stderr, "Error: Integer overflow");
   }
   else {
-    fprintf(stderr, "Error: Unknown error code: %d\n", i);
+    fprintf(stderr, "Error: Unknown error code: %lld\n", i);
   }
   exit(i);
 }

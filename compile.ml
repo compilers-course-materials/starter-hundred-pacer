@@ -8,6 +8,16 @@ let offset = 8
 
 let count = ref 0
 
+let rec remove x xs =
+  match xs with
+    | y::xs -> if x = y then remove x xs else y::(remove x xs)
+    | [] -> []
+
+let rec remove_duplicates xs =
+  match xs with
+    | x::xs -> x::(remove_duplicates (remove x xs))
+    | [] -> []
+
 let gen_temp base =
   count := !count + 1;
   sprintf "temp_%s_%d" base !count
@@ -163,19 +173,11 @@ let check_nums arg1 arg2 =
     IJne(error_non_int);
   ]
 
-let rec find_expr amap e =
-  match amap with
-    | (expr, vars) :: exprs ->
-      if e == expr then vars else find_expr exprs e
-    | [] -> failwith "No mapping for expr."
-
-let save_restore actives env s =
-  let names = find_expr actives s in
-  let locs = List.map (fun x -> findknown env x) names in
-  let regs = List.filter (fun l ->
+let save_restore env =
+  let regs = remove_duplicates (List.filter (fun l ->
     match l with
       | LReg _ -> true
-      | LStack _ -> false) locs in
+      | LStack _ -> false) (List.map snd env)) in
   (List.map (fun l ->
     match l with
       | LReg(r) -> IPush(Reg(r))
@@ -185,7 +187,7 @@ let save_restore actives env s =
       | LReg(r) -> IPop(Reg(r))
       | LStack _ -> failwith "cannot happen") regs)
 
-let rec acompile_step (s : cexpr) (env : location envt) actives (into : location) (is_tail : bool) : instruction list =
+let rec acompile_step (s : cexpr) (env : location envt) (into : location) (is_tail : bool) : instruction list =
   match s with
     | CApp(f, iargs) ->
       if is_tail then
@@ -205,9 +207,7 @@ let rec acompile_step (s : cexpr) (env : location envt) actives (into : location
         ]
       else
         let argpushes = List.map (fun a -> IPush(Sized(DWORD_PTR, acompile_imm_arg a env))) iargs in
-        let (active_pushes, active_pops) = save_restore actives env s in
         let donecall = gen_temp "donecall" in
-        active_pushes @
         [
           IMov(Reg(RAX), LabelVal(donecall));
           IPush(Reg(RAX));
@@ -216,9 +216,7 @@ let rec acompile_step (s : cexpr) (env : location envt) actives (into : location
         argpushes @ [
           IJmp(LabelVal(f))
         ] @ [
-          ILabel(donecall)
-        ] @
-        active_pops @ [
+          ILabel(donecall);
           IMov(dest_for into, Reg(RAX))
         ]
     | CPrim1(op, e) ->
@@ -245,14 +243,15 @@ let rec acompile_step (s : cexpr) (env : location envt) actives (into : location
             IOr(dest_for into, Const(0x0000000f));
           ]
         | Print ->
-          let (active_pushes, active_pops) = save_restore actives env s in
+          let (active_pushes, active_pops) = save_restore env in
           active_pushes @
           [
             IMov(Reg(RDI), Sized(DWORD_PTR, acompile_imm_arg e env));
             ICall("print");
+          ] @
+          active_pops @ [
             IMov(dest_for into, Reg(RAX));
           ]
-          @ active_pops
       end
 
     | CPrim2(op, left, right) ->
@@ -325,8 +324,8 @@ let rec acompile_step (s : cexpr) (env : location envt) actives (into : location
     | CIf(cond, thn, els) ->
       let prelude = acompile_imm cond env (LReg(RCX)) in
       let check = check_bool  in
-      let thn = acompile_expr thn env actives into is_tail in
-      let els = acompile_expr els env actives into is_tail in
+      let thn = acompile_expr thn env into is_tail in
+      let els = acompile_expr els env into is_tail in
       let label_then = gen_temp "then" in
       let label_else = gen_temp "else" in
       let label_end = gen_temp "end" in
@@ -343,36 +342,37 @@ let rec acompile_step (s : cexpr) (env : location envt) actives (into : location
       els @
       [ ILabel(label_end) ]
 
-and acompile_expr (e : aexpr) (env : location envt) (actives : (cexpr * string list) list) (into : location) (is_tail : bool) : instruction list =
+and acompile_expr (e : aexpr) (env : location envt) (into : location) (is_tail : bool) : instruction list =
   match e with
     | ALet(id, e, body) ->
       begin match find env id with
         | Some(loc) ->
           let prelude = match loc with
             | LStack(l) ->
-              (acompile_step e env actives (LReg(RAX)) false)
+              (acompile_step e env (LReg(RAX)) false)
               @
               [IMov(dest_for loc, Reg(RAX))]
             | LReg(r) -> 
-              acompile_step e env actives loc false
+              acompile_step e env loc false
           in
-          let postlude = acompile_expr body env actives into is_tail in
+          let postlude = acompile_expr body env into is_tail in
           prelude @ postlude
         | None -> failwith ("Don't know where to put: " ^ id)
       end
-    | ACExpr(s) -> acompile_step s env actives into is_tail
+    | ACExpr(s) -> acompile_step s env into is_tail
 
 let acompile_decl (ad : adecl) : instruction list =
   match ad with
     | ADFun(name, args, body) ->
       let max = ref 0 in
-      let env, amap = colorful_env body in
+      let env = colorful_env body in
       let env = List.map (fun (s, l) ->
         (s, match l with
           | LReg(r) -> l
           | LStack(l) ->
             if l > !max then max := l;
             LStack(l + 1 + (List.length args)))) env in
+      let (pushes, pops) = save_restore env in
       let arglocs = List.mapi (fun i a -> (a, LStack(i + 1))) args in
       [
         ILabel(name);
@@ -380,7 +380,9 @@ let acompile_decl (ad : adecl) : instruction list =
         IAdd(Reg(RBP), Const(offset * (List.length args)));
         ISub(Reg(RSP), Const(offset * (!max + 1)))
       ] @
-      (acompile_expr body (arglocs @ env) amap (LReg(RAX)) true) @
+      pushes @
+      (acompile_expr body (arglocs @ env) (LReg(RAX)) true) @
+      pops @
       [
         IMov(Reg(RSP), Reg(RBP));
         IPop(Reg(RBP));
@@ -476,8 +478,8 @@ let compile_to_string prog =
       match anfed with
         | AProgram(decls, main) ->
           let compiled_decls = List.map acompile_decl decls in
-          let env, amap = colorful_env main in
-          let compiled_main = (acompile_expr main env amap (LReg(RAX)) false) in
+          let env = colorful_env main in
+          let compiled_main = (acompile_expr main env (LReg(RAX)) false) in
           let varcount = count_vars main in
           let stackjump = offset * varcount in
           let prelude = "

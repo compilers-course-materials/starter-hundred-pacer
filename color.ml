@@ -39,16 +39,20 @@ let color_graph (colors : int) (nodes : string list) (edges : (string * string) 
     | _ -> None
   end
 
-let get_colors (regs : reg list) (varlist : string list) (edges : (string * string) list) : location envt =
+(* Return all the identifiers that are defined in this expression (e.g. appear
+in let bindings) to use for building an environment *)
+let getvars (ae : aexpr) : string list =
   []
   
-let getvars (ae : aexpr) : string list = []
+let get_colors (registers : reg list) (varlist : string list) (edgelist : (string * string) list) : (location envt) =
+  []
 
-let dep_graph (ae : aexpr) : ((string * string) list * (cexpr * string list) list) =
-  ([], [])
+let dep_graph (ae : aexpr) : (string * string) list =
+  []
 
-let colorful_env (ae : aexpr) : (location envt * (cexpr * string list) list) =
-  let (deps, amap) = dep_graph ae in
-  (* spare_regs is a list that contains the usable registers for your implementation *)
-  (get_colors !spare_regs (getvars ae) deps, amap)
+let colorful_env (ae : aexpr) : location envt =
+  let deps = dep_graph ae in
+  (* spare_regs is a list that contains the usable registers for your
+  implementation; it is set by the NUMREGS option as well *)
+  get_colors !spare_regs (getvars ae) deps
 

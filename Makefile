@@ -20,7 +20,7 @@ test: compile.ml runner.ml test.ml expr.ml instruction.ml parser.mly lexer.mll c
 	$(BUILD) -package $(PKGS) test.native
 	mv test.native test
 
-output/%.run: output/%.o main.c
+output/%.run: output/%.o main64.c
 	clang -mstackrealign -g -o $@ main64.c $<
 
 output/%.o: output/%.s
@@ -33,3 +33,4 @@ clean:
 	rm -rf output/*.o output/*.s output/*.dSYM output/*.run *.log
 	rm -rf _build/
 	rm -f main test
+
