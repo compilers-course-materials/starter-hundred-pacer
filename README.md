@@ -89,7 +89,7 @@ mov R1, 10 ; store the result for n in R1 directly
 sar R1, 1
 mul R1, 10
 mov R2, 12 ; store the result for m in R2 directly
-sar R2, 6
+sar R2, 1
 mul R2, 12
 mov R3, R1 ; store the result for x in R3 directly
 add R3, 2
@@ -108,7 +108,7 @@ sar RAX, 1
 mul RAX, 10
 mov [RBP-8], RAX ; extra store
 mov RAX, 12
-sar RAX, 6
+sar RAX, 1
 mul RAX, 12
 mov [RBP-16], RAX ; extra store
 mov RAX, [RBP-8] ; memory rather than register access
@@ -126,7 +126,7 @@ Making this change would be require a few alterations to the compiler:
 1. We'd need to have our environment allow variables to be bound to
    _registers_, rather than just a stack offset.
 2. We need to change the goal of the compiler from “get the answer into RAX”
-   to “get the answer into <insert location here>”
+   to “get the answer into &lt;insert location here&gt;”
 3. Now, whenever we call a function, that function may overwrite the values of 
    registers the current context is using for variables.  This demands that we
    save the contents of in-use registers before calling a function.
@@ -290,7 +290,7 @@ existing coloring algorithms (and fast heuristics for them, if we don't want to
 wait for an optimal solution).  This graph creation is the fragment of the
 compiler you will implement in this assignment.
 
-In particular you'll implement two functions (which may each come with their own helpers):
+In particular you'll implement three functions (which may each come with their own helpers):
 
 ```
 (* Given an expression, return a list of dependency edges between
@@ -298,8 +298,8 @@ variables *)
 dep_graph :: (ae : aexpr) -> (string * string) list
 
 (* Given a list of registers, a set of variables, and a set of edges,
-create an environment of locations that uses as many registers as
-possible *)
+create an environment of locations that uses as few locations as
+possible, preferring registers to stack locations *)
 get_colors :: (regs : reg list) (varlist : string list) (edges : (string * string) list) : location envt =
 
 (* combine dep_graph and get_colors to create an environment for the given expression *)
@@ -323,6 +323,109 @@ dep_graph_ae :: (ae : aexpr) (actives : string list) -> (string list * (string *
 dep_graph_ce :: (ce : cexpr) (actives : string list) -> (string list * (string * string) list)
 ```
 
+#### Rules for Coloring
+
+The `get_colors` function, which produces an environment, should always succeed
+no matter how many registers are provided.  It should find out how many colors
+are needed for the given graph, get a coloring for it, and produce an
+environment with the following constraints:
+
+- Variables given the same color by the coloring should be mapped to the same
+  location in the environment, and variables mapped to different colors should
+  be mapped to different locations in the environment.
+- If there are equal or fewer _colors_ than registers provided, then all the
+  variables should be mapped to LReg locations, and no more than C LReg
+  locations should be created, where C is the number of colors.
+- If there are more _colors_ than registers provided, then some variables
+  should map to stack locations.  In the resulting environment, there should be
+  C - R stack locations (LStack) created, where R is the number of registers
+  and C is the number of colors.  The LStack's indices should count from 1 to
+  (C - R).  In the resulting environment, there should be R register locations
+  (LReg).
+
+Example from class:
+
+
+```
+let b = 4 in
+let x = 10 in
+let i = if true:
+      let z = 11 in z + b
+    else:
+      let y = 9 in y + 1 in
+let a = 5 + i in
+a + x
+```
+
+There is a valid 3-coloring for the induced graph:
+
+```
+a: 1 (green)
+b: 1 (green)
+i: 2 (red)
+z: 2 (red)
+y: 2 (red)
+x: 3 (blue)
+```
+
+Example 1:
+
+Let's assume we have 2 registers available, R1 and R2.  Then we need to create (3 - 2) LStack locations, counting from 1, and 2 LReg locations.  So the locations in our environment are:
+
+```
+LReg(R1)
+LReg(R2)
+LStack(1)
+```
+
+Now we need to build an environment that matches variables to these, following the coloring rules.  One answer is:
+
+```
+a: LReg(R1)
+b: LReg(R1)
+i: LStack(1)
+z: LStack(1)
+y: LStack(1)
+x: LReg(R2)
+```
+
+Another valid answer is:
+
+```
+a: LReg(R1)
+b: LReg(R1)
+i: LReg(R2)
+z: LReg(R2)
+y: LReg(R2)
+x: LStack(1)
+```
+
+Either of these are correct answers from the point of view of register
+allocation (it's fun to think about if one is better, but neither is wrong).
+
+Example 2: let's consider that we have 0 registers available.  Then we need to
+choose (3 - 0) locations on the stack, and 0 registers:
+
+```
+LStack(1)
+LStack(2)
+LStack(3)
+```
+
+A valid environment is: 
+
+```
+a: LStack(2)
+b: LStack(2)
+i: LStack(3)
+z: LStack(3)
+y: LStack(3)
+x: LStack(1)
+```
+
+These rules accomplish the overall goal of putting as many values as possible
+into registers, and also reusing as much space as possible, while still running
+programs that need more space than available registers.
 
 ### Testing
 
